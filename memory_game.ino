@@ -6,6 +6,7 @@ const int LED_CONTROL_DIN_ID = 12;
 const int LED_CONTROL_CLK_ID = 11;
 const int LED_CONTROL_CS_ID = 10;
 
+const unsigned int WIN_LED_ID = 4;
 const int BUTTON_ID = 2;
 const int JOY_BUTTON_ID = 8;
 const int JOY_X_ID = A0;
@@ -37,6 +38,46 @@ struct Map {
     void setAt(Vector2 position, bool isOn) {
       this->_map[position.x][position.y] = isOn;
     }
+
+    void clear(){
+        for (char x = 0; x < MAP_SIZE; ++x){
+            for (char y = 0; y < MAP_SIZE; ++y){
+                this->setAt({x, y}, false);
+            }
+        }
+    }
+};
+
+struct Light {
+    private:
+        bool _isOn;
+
+    public:
+        unsigned int id;
+        unsigned long millisForSwitch;
+
+        Light(unsigned int id) : id(id) {}
+
+        bool isOn(){
+            return this->_isOn;
+        }
+
+        void switchTo(bool isOn){
+            this->_isOn = isOn;
+            digitalWrite(id, isOn ? HIGH : LOW);
+        }
+
+        void switchToFor(bool isOn, unsigned long duration){
+            this->switchTo(isOn);
+            this->millisForSwitch = millis() + duration;
+        }
+
+        void doAction() {
+            if (this->millisForSwitch > 0 && millis() > this->millisForSwitch){
+                this->millisForSwitch = 0;
+                this->switchTo(!this->_isOn);
+            }
+        }    
 };
 
 struct Controller {
@@ -50,6 +91,8 @@ struct Controller {
       return reading - 1;
     }
 
+    bool previousButtonDownState = false;
+
   public:
     Vector2 getAxis(){
       return {readAxis(JOY_X_ID), readAxis(JOY_Y_ID)};
@@ -58,44 +101,59 @@ struct Controller {
     bool isButtonDown(){
       return digitalRead(BUTTON_ID);
     }
+
+    bool isButtonJustDown(){
+      return !previousButtonDownState && digitalRead(BUTTON_ID);
+    } 
+
+    void doAction(){
+        previousButtonDownState = digitalRead(BUTTON_ID);
+    }
 };
 
 struct Cursor {
-  const long LED_BLINK_FREQUENCY = 300;
-  const long MOVE_FREQUENCY = 500;
-  long lastMillis;
-  Vector2 position;
-  bool ledIsOn;
-  Map& map;
-  Controller& controller;
+    private:
+        const long LED_BLINK_FREQUENCY = 300;
+        const long MOVE_FREQUENCY = 500;
+        unsigned long lastMillis;
+        bool ledIsOn;
+        Map& map;
+        Controller& controller;
 
-  long previousMoveMillis;
-  Vector2 previousAxis;
+        long previousMoveMillis;
+        Vector2 previousAxis;
 
-  Cursor(Map& map, Controller& controller) : map(map), controller(controller) {
-    
-  }
+    public:
+        Vector2 position;
 
-  void doAction(){
-    long currentMillis = millis();
+        Cursor(Map& map, Controller& controller) : map(map), controller(controller) {
+            
+        }
 
-    Vector2 currentAxis = controller.getAxis();
+        bool getLedIsOn(){
+            return this->ledIsOn;
+        }
 
-    if (currentMillis > lastMillis + LED_BLINK_FREQUENCY) {
-      lastMillis = currentMillis;
-      ledIsOn = !ledIsOn;
-    }
+        void doAction(){
+            unsigned long currentMillis = millis();
 
-    if (currentAxis != previousAxis) {
-      previousAxis = currentAxis;
-      move(currentAxis, currentMillis);
-    } else if (currentMillis > previousMoveMillis + MOVE_FREQUENCY && !currentAxis.isZero()){
-      move(currentAxis, currentMillis);
-    }
-  }
+            Vector2 currentAxis = controller.getAxis();
+
+            if (currentMillis > lastMillis + LED_BLINK_FREQUENCY) {
+                lastMillis = currentMillis;
+                ledIsOn = !ledIsOn;
+            }
+
+            if (currentAxis != previousAxis) {
+                previousAxis = currentAxis;
+                move(currentAxis, currentMillis);
+            } else if (currentMillis > previousMoveMillis + MOVE_FREQUENCY && !currentAxis.isZero()){
+                move(currentAxis, currentMillis);
+            }
+        }
 
   private:
-    void move(const Vector2& velocity, long currentMillis) {
+    void move(const Vector2& velocity, unsigned long currentMillis) {
       this->position.x = (this->position.x + velocity.x) % MAP_SIZE;
       this->position.y = (this->position.y + velocity.y) % MAP_SIZE;
 
@@ -106,9 +164,6 @@ struct Cursor {
         this->position.y += MAP_SIZE;
 
       this->previousMoveMillis = currentMillis;
-
-      int joyButtonIsDown = digitalRead(JOY_BUTTON_ID);
-      Serial.println(joyButtonIsDown);
     }
 };
 
@@ -119,6 +174,7 @@ const int responseDelay = 1000;   // response delay of the mouse, in ms
 char textBuffer[40];
 
 void setup() {
+  pinMode(WIN_LED_ID, OUTPUT);
   pinMode(JOY_BUTTON_ID, INPUT);
   pinMode(BUTTON_ID, INPUT);
   lc.shutdown(0,false);
@@ -137,48 +193,81 @@ enum class GameState : unsigned char {
 };
 
 struct Game {
-  GameState state;
-  Controller controller;
-  Map objectiveMap;
-  Map currentMap;
-  Cursor cursor;
+    private:
+        GameState state;
+        Controller controller;
+        Map objectiveMap;
+        Map currentMap;
+        Cursor cursor;
+        Light winLight;
 
-  Game() : cursor(currentMap, controller){
-    for (char x = 0; x < MAP_SIZE; ++x) {
-      for (char y = 0; y < MAP_SIZE; ++y) {
-        objectiveMap.setAt({x, y}, random(2) == 1);
-      }
-    }
-  }
-
-  void doAction(){
-    /*if (state == GameState::None){
-
-    } else if (state == GameState::ShowObjective) {
-
-    } else if (state == GameState::RetreiveObjective) {*/
-      cursor.doAction();
-
-      if (controller.isButtonDown()){
-        currentMap.setAt(cursor.position, true);
-      }
-  /*} else if (state == GameState::GameOver) {
-
-    } else if (state == GameState::Win) {
-      
-    }*/
-  }
-
-  void render(){
-    for (char x = 0; x < MAP_SIZE; ++x) {
-        for (char y = 0; y < MAP_SIZE; ++y) {
-          if (!(x == cursor.position.x && y == cursor.position.y))
-            lc.setLed(0, y, x, currentMap.getAt({x, y}));
+    public:
+        Game() : cursor(currentMap, controller), winLight(WIN_LED_ID) {
+            for (char x = 0; x < MAP_SIZE; ++x) {
+            for (char y = 0; y < MAP_SIZE; ++y) {
+                objectiveMap.setAt({x, y}, random(2) == 1);
+            }
+            }
         }
-      }
 
-    lc.setLed(0, cursor.position.y, cursor.position.x, cursor.ledIsOn);
-  }
+        void doAction(){
+            if (state == GameState::None){
+                state = GameState::ShowObjective;
+            } else if (state == GameState::ShowObjective) {
+                if (controller.isButtonJustDown()) {
+                    state = GameState::RetreiveObjective;
+                }
+            } else if (state == GameState::RetreiveObjective) {
+                cursor.doAction();
+
+                if (controller.isButtonJustDown()){
+                    if (!objectiveMap.getAt(cursor.position)) {
+                        state = GameState::GameOver;
+                    } else {
+                        currentMap.setAt(cursor.position, true);
+                        winLight.switchToFor(true, 1000);
+                        // TODO: si plus rien à trouver: win feedback        
+                    }
+                }
+            } else if (state == GameState::GameOver) {
+            // feedback ?
+            if (controller.isButtonJustDown()) {
+                currentMap.clear();
+                cursor.position = {0,0};
+                state = GameState::None;
+            }
+            } else if (state == GameState::Win) {
+            // feedback
+            }
+
+            controller.doAction();
+            winLight.doAction();
+        }
+
+        void render(){
+            if (state == GameState::RetreiveObjective) {
+                for (char x = 0; x < MAP_SIZE; ++x) {
+                    for (char y = 0; y < MAP_SIZE; ++y) {
+                        if (!(x == cursor.position.x && y == cursor.position.y))
+                            lc.setLed(0, y, x, currentMap.getAt({x, y}));
+                    }
+                }
+
+                lc.setLed(0, cursor.position.y, cursor.position.x, cursor.getLedIsOn());
+            } else if (state == GameState::ShowObjective) {
+                for (char x = 0; x < MAP_SIZE; ++x) {
+                    for (char y = 0; y < MAP_SIZE; ++y) {
+                        lc.setLed(0, y, x, objectiveMap.getAt({x, y}));
+                    }
+                }
+            } else if (state == GameState::GameOver){
+                for (char x = 0; x < MAP_SIZE; ++x) {
+                    for (char y = 0; y < MAP_SIZE; ++y) {
+                        lc.setLed(0, y, x, true);
+                    }
+                }
+            }
+        }
 };
 
 Game game;
