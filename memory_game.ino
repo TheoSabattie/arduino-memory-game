@@ -112,11 +112,6 @@ struct Cursor {
     }
 };
 
-Map objectiveMap;
-Map currentMap;
-Controller controller;
-
-Cursor cursor(currentMap, controller);
 
 // parameters for reading the joystick:
 const int responseDelay = 1000;   // response delay of the mouse, in ms
@@ -131,29 +126,67 @@ void setup() {
   lc.setIntensity(0,0);
   lc.clearDisplay(0);
   Serial.begin(9600);
-
-  for (char x = 0; x < MAP_SIZE; ++x) {
-    for (char y = 0; y < MAP_SIZE; ++y) {
-      objectiveMap.setAt({x, y}, random(2) == 1);
-    }
-  }
 }
 
-void loop() { 
-  for (char x = 0; x < MAP_SIZE; ++x) {
-    for (char y = 0; y < MAP_SIZE; ++y) {
-      if (!(x == cursor.position.x && y == cursor.position.y))
-        lc.setLed(0, y, x, currentMap.getAt({x, y}));
+enum class GameState : unsigned char { 
+  None = 0,
+  ShowObjective = 1,
+  RetreiveObjective = 2,
+  GameOver = 3,
+  Win = 4
+};
+
+struct Game {
+  GameState state;
+  Controller controller;
+  Map objectiveMap;
+  Map currentMap;
+  Cursor cursor;
+
+  Game() : cursor(currentMap, controller){
+    for (char x = 0; x < MAP_SIZE; ++x) {
+      for (char y = 0; y < MAP_SIZE; ++y) {
+        objectiveMap.setAt({x, y}, random(2) == 1);
+      }
     }
   }
 
-  lc.setLed(0, cursor.position.y, cursor.position.x, cursor.ledIsOn);
-  cursor.doAction();
+  void doAction(){
+    /*if (state == GameState::None){
 
-  if (controller.isButtonDown()){
-    currentMap.setAt(cursor.position, true);
+    } else if (state == GameState::ShowObjective) {
+
+    } else if (state == GameState::RetreiveObjective) {*/
+      cursor.doAction();
+
+      if (controller.isButtonDown()){
+        currentMap.setAt(cursor.position, true);
+      }
+  /*} else if (state == GameState::GameOver) {
+
+    } else if (state == GameState::Win) {
+      
+    }*/
   }
 
+  void render(){
+    for (char x = 0; x < MAP_SIZE; ++x) {
+        for (char y = 0; y < MAP_SIZE; ++y) {
+          if (!(x == cursor.position.x && y == cursor.position.y))
+            lc.setLed(0, y, x, currentMap.getAt({x, y}));
+        }
+      }
+
+    lc.setLed(0, cursor.position.y, cursor.position.x, cursor.ledIsOn);
+  }
+};
+
+Game game;
+
+void loop() { 
+  
+  game.doAction();
+  game.render();
   //sprintf(textBuffer, "cursor x: %d, y: %d", objectiveMap.getAt(0,0), 10);
   //Serial.println(textBuffer);
   //delay(1000);
