@@ -18,6 +18,7 @@
             "includePath": [
                 "/Users/theosabattie/Library/Arduino15/packages/arduino/hardware/avr/1.8.6/cores/arduino",
                 "/Users/theosabattie/Library/Arduino15/packages/arduino/hardware/avr/1.8.6/variants/standard",
+                "/Users/theosabattie/Documents/Arduino/libraries/Adafruit_NeoPixel",
                 "/Users/theosabattie/Documents/Arduino/libraries/LedControl/src",
                 "/Users/theosabattie/Library/Arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/lib/gcc/avr/7.3.0/include",
                 "/Users/theosabattie/Library/Arduino15/packages/arduino/tools/avr-gcc/7.3.0-atmel3.6.1-arduino7/lib/gcc/avr/7.3.0/include-fixed",

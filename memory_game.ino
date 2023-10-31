@@ -1,5 +1,8 @@
+#include <Adafruit_NeoPixel.h>
+
 //We always have to include the library
 #include "LedControl.h"
+
 #define MAP_SIZE 8
 
 const int LED_CONTROL_DIN_ID = 12;
