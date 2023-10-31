@@ -15,7 +15,27 @@ const int JOY_BUTTON_ID = 8;
 const int JOY_X_ID = A0;
 const int JOY_Y_ID = A1;
 
+
 LedControl lc = LedControl(LED_CONTROL_DIN_ID, LED_CONTROL_CLK_ID, LED_CONTROL_CS_ID, 1);
+
+struct ProgressBar {
+    private:
+        Adafruit_NeoPixel strip;
+        uint16_t currentProgress = 0;
+        uint16_t maxProgress = 10;
+
+    public:
+        ProgressBar(uint16_t ledAmount, int16_t ledInPin, neoPixelType type) : strip(ledAmount, ledInPin, type){
+            // ledAmount : cannot be 0
+            strip.begin();
+            strip.show();
+            strip.setBrightness(50);
+        }
+
+        void doAction(){
+            strip.setPixelColor(0, 0xFF0000);
+        }
+}
 
 struct Vector2 {
     public:
@@ -87,27 +107,27 @@ struct Light {
 struct Controller {
     private: 
         char readAxis(byte thisAxis) {
-        // read the analog input:
-        int reading = analogRead(thisAxis);
+            // read the analog input:
+            int reading = analogRead(thisAxis);
 
-        // map the reading from the analog input range to the output range:
-        reading = map(reading, 0, 1023, 0, 3);
-        return reading - 1;
+            // _map the reading from the analog input range to the output range:
+            reading = _map(reading, 0, 1023, 0, 3);
+            return reading - 1;
         }
 
         bool previousButtonDownState = false;
 
     public:
         Vector2 getAxis(){
-        return {readAxis(JOY_X_ID), readAxis(JOY_Y_ID)};
+            return {readAxis(JOY_X_ID), readAxis(JOY_Y_ID)};
         }
 
         bool isButtonDown(){
-        return digitalRead(BUTTON_ID);
+            return digitalRead(BUTTON_ID);
         }
 
         bool isButtonJustDown(){
-        return !previousButtonDownState && digitalRead(BUTTON_ID);
+            return !previousButtonDownState && digitalRead(BUTTON_ID);
         } 
 
         void doAction(){
@@ -119,39 +139,39 @@ struct Cursor {
     private:
         const long LED_BLINK_FREQUENCY = 300;
         const long MOVE_FREQUENCY = 500;
-        unsigned long lastMillis;
-        bool ledIsOn;
-        Map& map;
-        Controller& controller;
+        unsigned long _lastMillis;
+        bool _ledIsOn;
+        Map& _map;
+        Controller& _controller;
 
-        long previousMoveMillis;
-        Vector2 previousAxis;
+        long _previousMoveMillis;
+        Vector2 _previousAxis;
 
     public:
         Vector2 position;
 
-        Cursor(Map& map, Controller& controller) : map(map), controller(controller) {
+        Cursor(Map& _map, Controller& _controller) : _map(_map), _controller(_controller) {
             
         }
 
         bool getLedIsOn(){
-            return this->ledIsOn;
+            return this->_ledIsOn;
         }
 
         void doAction(){
             unsigned long currentMillis = millis();
 
-            Vector2 currentAxis = controller.getAxis();
+            Vector2 currentAxis = _controller.getAxis();
 
-            if (currentMillis > lastMillis + LED_BLINK_FREQUENCY) {
-                lastMillis = currentMillis;
-                ledIsOn = !ledIsOn;
+            if (currentMillis > _lastMillis + LED_BLINK_FREQUENCY) {
+                _lastMillis = currentMillis;
+                _ledIsOn = !_ledIsOn;
             }
 
-            if (currentAxis != previousAxis) {
-                previousAxis = currentAxis;
+            if (currentAxis != _previousAxis) {
+                _previousAxis = currentAxis;
                 move(currentAxis, currentMillis);
-            } else if (currentMillis > previousMoveMillis + MOVE_FREQUENCY && !currentAxis.isZero()){
+            } else if (currentMillis > _previousMoveMillis + MOVE_FREQUENCY && !currentAxis.isZero()){
                 move(currentAxis, currentMillis);
             }
         }
@@ -167,7 +187,7 @@ struct Cursor {
       if (this->position.y < 0)
         this->position.y += MAP_SIZE;
 
-      this->previousMoveMillis = currentMillis;
+      this->_previousMoveMillis = currentMillis;
     }
 };
 
@@ -198,73 +218,73 @@ enum class GameState : unsigned char {
 
 struct Game {
     private:
-        GameState state;
-        Controller controller;
-        Map objectiveMap;
-        Map currentMap;
-        Cursor cursor;
-        Light winLight;
+        GameState _state;
+        Controller _controller;
+        Map _objectiveMap;
+        Map _currentMap;
+        Cursor _cursor;
+        Light _winLight;
 
     public:
-        Game() : cursor(currentMap, controller), winLight(WIN_LED_ID) {
+        Game() : _cursor(_currentMap, _controller), _winLight(WIN_LED_ID) {
             for (char x = 0; x < MAP_SIZE; ++x) {
             for (char y = 0; y < MAP_SIZE; ++y) {
-                objectiveMap.setAt({x, y}, random(2) == 1);
+                _objectiveMap.setAt({x, y}, random(2) == 1);
             }
             }
         }
 
         void doAction(){
-            if (state == GameState::None){
-                state = GameState::ShowObjective;
-            } else if (state == GameState::ShowObjective) {
-                if (controller.isButtonJustDown()) {
-                    state = GameState::RetreiveObjective;
+            if (_state == GameState::None){
+                _state = GameState::ShowObjective;
+            } else if (_state == GameState::ShowObjective) {
+                if (_controller.isButtonJustDown()) {
+                    _state = GameState::RetreiveObjective;
                 }
-            } else if (state == GameState::RetreiveObjective) {
-                cursor.doAction();
+            } else if (_state == GameState::RetreiveObjective) {
+                _cursor.doAction();
 
-                if (controller.isButtonJustDown()){
-                    if (!objectiveMap.getAt(cursor.position)) {
-                        state = GameState::GameOver;
+                if (_controller.isButtonJustDown()){
+                    if (!_objectiveMap.getAt(_cursor.position)) {
+                        _state = GameState::GameOver;
                     } else {
-                        currentMap.setAt(cursor.position, true);
-                        winLight.switchToFor(true, 1000);
+                        _currentMap.setAt(_cursor.position, true);
+                        _winLight.switchToFor(true, 1000);
                         // TODO: si plus rien à trouver: win feedback        
                     }
                 }
-            } else if (state == GameState::GameOver) {
+            } else if (_state == GameState::GameOver) {
             // feedback ?
-            if (controller.isButtonJustDown()) {
-                currentMap.clear();
-                cursor.position = {0,0};
-                state = GameState::None;
+            if (_controller.isButtonJustDown()) {
+                _currentMap.clear();
+                _cursor.position = {0,0};
+                _state = GameState::None;
             }
-            } else if (state == GameState::Win) {
+            } else if (_state == GameState::Win) {
             // feedback
             }
 
-            controller.doAction();
-            winLight.doAction();
+            _controller.doAction();
+            _winLight.doAction();
         }
 
         void render(){
-            if (state == GameState::RetreiveObjective) {
+            if (_state == GameState::RetreiveObjective) {
                 for (char x = 0; x < MAP_SIZE; ++x) {
                     for (char y = 0; y < MAP_SIZE; ++y) {
-                        if (!(x == cursor.position.x && y == cursor.position.y))
-                            lc.setLed(0, y, x, currentMap.getAt({x, y}));
+                        if (!(x == _cursor.position.x && y == _cursor.position.y))
+                            lc.setLed(0, y, x, _currentMap.getAt({x, y}));
                     }
                 }
 
-                lc.setLed(0, cursor.position.y, cursor.position.x, cursor.getLedIsOn());
-            } else if (state == GameState::ShowObjective) {
+                lc.setLed(0, _cursor.position.y, _cursor.position.x, _cursor.getLedIsOn());
+            } else if (_state == GameState::ShowObjective) {
                 for (char x = 0; x < MAP_SIZE; ++x) {
                     for (char y = 0; y < MAP_SIZE; ++y) {
-                        lc.setLed(0, y, x, objectiveMap.getAt({x, y}));
+                        lc.setLed(0, y, x, _objectiveMap.getAt({x, y}));
                     }
                 }
-            } else if (state == GameState::GameOver){
+            } else if (_state == GameState::GameOver){
                 for (char x = 0; x < MAP_SIZE; ++x) {
                     for (char y = 0; y < MAP_SIZE; ++y) {
                         lc.setLed(0, y, x, true);
@@ -280,7 +300,7 @@ void loop() {
   
     game.doAction();
     game.render();
-    //sprintf(textBuffer, "cursor x: %d, y: %d", objectiveMap.getAt(0,0), 10);
+    //sprintf(textBuffer, "_cursor x: %d, y: %d", _objectiveMap.getAt(0,0), 10);
     //Serial.println(textBuffer);
     //delay(1000);
 }

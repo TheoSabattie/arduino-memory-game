@@ -1,7 +1,4 @@
 {
-    "sketch": "memory_game.ino",
     "port": "/dev/cu.usbmodem143101",
-    "board": "arduino:avr:uno",
-    "output": "../build",
-    "intelliSenseGen": "global"
+    "board": "arduino:avr:uno"
 }
