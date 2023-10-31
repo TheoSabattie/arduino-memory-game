@@ -18,37 +18,38 @@ const int JOY_Y_ID = A1;
 LedControl lc = LedControl(LED_CONTROL_DIN_ID, LED_CONTROL_CLK_ID, LED_CONTROL_CS_ID, 1);
 
 struct Vector2 {
-  char x;
-  char y;
+    public:
+        char x;
+        char y;
 
-  bool isZero(){
-    return x == 0 && y == 0; 
-  }
+        bool isZero(){
+            return x == 0 && y == 0; 
+        }
 
-  inline bool operator==(const Vector2& rhs) { return x == rhs.x && y == rhs.y; }
-  inline bool operator!=(const Vector2& rhs) { return x != rhs.x || y != rhs.y; }
+        inline bool operator==(const Vector2& rhs) { return x == rhs.x && y == rhs.y; }
+        inline bool operator!=(const Vector2& rhs) { return x != rhs.x || y != rhs.y; }
 };
 
 struct Map {
-  private:
-    bool _map[MAP_SIZE][MAP_SIZE];
+    private:
+        bool _map[MAP_SIZE][MAP_SIZE];
 
-  public:
-    bool getAt(Vector2 position) {
-      return this->_map[position.x][position.y];
-    }
+    public:
+        bool getAt(Vector2 position) {
+        return this->_map[position.x][position.y];
+        }
 
-    void setAt(Vector2 position, bool isOn) {
-      this->_map[position.x][position.y] = isOn;
-    }
+        void setAt(Vector2 position, bool isOn) {
+        this->_map[position.x][position.y] = isOn;
+        }
 
-    void clear(){
-        for (char x = 0; x < MAP_SIZE; ++x){
-            for (char y = 0; y < MAP_SIZE; ++y){
-                this->setAt({x, y}, false);
+        void clear(){
+            for (char x = 0; x < MAP_SIZE; ++x){
+                for (char y = 0; y < MAP_SIZE; ++y){
+                    this->setAt({x, y}, false);
+                }
             }
         }
-    }
 };
 
 struct Light {
@@ -84,34 +85,34 @@ struct Light {
 };
 
 struct Controller {
-  private: 
-    char readAxis(byte thisAxis) {
-      // read the analog input:
-      int reading = analogRead(thisAxis);
+    private: 
+        char readAxis(byte thisAxis) {
+        // read the analog input:
+        int reading = analogRead(thisAxis);
 
-      // map the reading from the analog input range to the output range:
-      reading = map(reading, 0, 1023, 0, 3);
-      return reading - 1;
-    }
+        // map the reading from the analog input range to the output range:
+        reading = map(reading, 0, 1023, 0, 3);
+        return reading - 1;
+        }
 
-    bool previousButtonDownState = false;
+        bool previousButtonDownState = false;
 
-  public:
-    Vector2 getAxis(){
-      return {readAxis(JOY_X_ID), readAxis(JOY_Y_ID)};
-    }
+    public:
+        Vector2 getAxis(){
+        return {readAxis(JOY_X_ID), readAxis(JOY_Y_ID)};
+        }
 
-    bool isButtonDown(){
-      return digitalRead(BUTTON_ID);
-    }
+        bool isButtonDown(){
+        return digitalRead(BUTTON_ID);
+        }
 
-    bool isButtonJustDown(){
-      return !previousButtonDownState && digitalRead(BUTTON_ID);
-    } 
+        bool isButtonJustDown(){
+        return !previousButtonDownState && digitalRead(BUTTON_ID);
+        } 
 
-    void doAction(){
-        previousButtonDownState = digitalRead(BUTTON_ID);
-    }
+        void doAction(){
+            previousButtonDownState = digitalRead(BUTTON_ID);
+        }
 };
 
 struct Cursor {
@@ -177,22 +178,22 @@ const int responseDelay = 1000;   // response delay of the mouse, in ms
 char textBuffer[40];
 
 void setup() {
-  pinMode(WIN_LED_ID, OUTPUT);
-  pinMode(JOY_BUTTON_ID, INPUT);
-  pinMode(BUTTON_ID, INPUT);
-  lc.shutdown(0,false);
-  /* Set the brightness to a medium values */
-  lc.setIntensity(0,0);
-  lc.clearDisplay(0);
-  Serial.begin(9600);
+    pinMode(WIN_LED_ID, OUTPUT);
+    pinMode(JOY_BUTTON_ID, INPUT);
+    pinMode(BUTTON_ID, INPUT);
+    lc.shutdown(0,false);
+    /* Set the brightness to a medium values */
+    lc.setIntensity(0,0);
+    lc.clearDisplay(0);
+    Serial.begin(9600);
 }
 
 enum class GameState : unsigned char { 
-  None = 0,
-  ShowObjective = 1,
-  RetreiveObjective = 2,
-  GameOver = 3,
-  Win = 4
+    None = 0,
+    ShowObjective = 1,
+    RetreiveObjective = 2,
+    GameOver = 3,
+    Win = 4
 };
 
 struct Game {
@@ -277,10 +278,10 @@ Game game;
 
 void loop() { 
   
-  game.doAction();
-  game.render();
-  //sprintf(textBuffer, "cursor x: %d, y: %d", objectiveMap.getAt(0,0), 10);
-  //Serial.println(textBuffer);
-  //delay(1000);
+    game.doAction();
+    game.render();
+    //sprintf(textBuffer, "cursor x: %d, y: %d", objectiveMap.getAt(0,0), 10);
+    //Serial.println(textBuffer);
+    //delay(1000);
 }
 
