@@ -18,6 +18,23 @@ const int JOY_Y_ID = A1;
 
 LedControl lc = LedControl(LED_CONTROL_DIN_ID, LED_CONTROL_CLK_ID, LED_CONTROL_CS_ID, 1);
 
+struct Color {
+    public:
+        byte r;
+        byte g;
+        byte b;
+
+        Color(byte r, byte g, byte b): r(r), g(g), b(b) {}
+
+        uint32_t toGRB(){
+            return (uint32_t(g) << 16) | (uint32_t(r) << 8) | b; 
+        }
+
+        uint32_t toRGB(){
+            return (uint32_t(r) << 16) | (uint32_t(g) << 8) | b; 
+        }
+};
+
 struct ProgressBar {
     private:
         Adafruit_NeoPixel strip;
@@ -25,17 +42,22 @@ struct ProgressBar {
         uint16_t maxProgress = 10;
 
     public:
-        ProgressBar(uint16_t ledAmount, int16_t ledInPin, neoPixelType type) : strip(ledAmount, ledInPin, type){
-            // ledAmount : cannot be 0
+        ProgressBar(uint16_t ledAmount, int16_t ledInputPin = 6, neoPixelType ledType = NEO_GRB + NEO_KHZ800) : strip(ledAmount, ledInputPin, ledType){
+        }
+
+        void begin() {
             strip.begin();
-            strip.show();
             strip.setBrightness(50);
+            strip.show();
         }
 
         void doAction(){
-            strip.setPixelColor(0, 0xFF0000);
+            strip.setPixelColor(0, Color(255,0,0).toGRB());
+            strip.show();
         }
-}
+};
+
+
 
 struct Vector2 {
     public:
@@ -110,8 +132,8 @@ struct Controller {
             // read the analog input:
             int reading = analogRead(thisAxis);
 
-            // _map the reading from the analog input range to the output range:
-            reading = _map(reading, 0, 1023, 0, 3);
+            // map the reading from the analog input range to the output range:
+            reading = map(reading, 0, 1023, 0, 3);
             return reading - 1;
         }
 
@@ -197,17 +219,6 @@ const int responseDelay = 1000;   // response delay of the mouse, in ms
 
 char textBuffer[40];
 
-void setup() {
-    pinMode(WIN_LED_ID, OUTPUT);
-    pinMode(JOY_BUTTON_ID, INPUT);
-    pinMode(BUTTON_ID, INPUT);
-    lc.shutdown(0,false);
-    /* Set the brightness to a medium values */
-    lc.setIntensity(0,0);
-    lc.clearDisplay(0);
-    Serial.begin(9600);
-}
-
 enum class GameState : unsigned char { 
     None = 0,
     ShowObjective = 1,
@@ -224,14 +235,19 @@ struct Game {
         Map _currentMap;
         Cursor _cursor;
         Light _winLight;
+        ProgressBar _progressBar;
 
     public:
-        Game() : _cursor(_currentMap, _controller), _winLight(WIN_LED_ID) {
+        Game() : _cursor(_currentMap, _controller), _winLight(WIN_LED_ID), _progressBar(10) {
             for (char x = 0; x < MAP_SIZE; ++x) {
-            for (char y = 0; y < MAP_SIZE; ++y) {
-                _objectiveMap.setAt({x, y}, random(2) == 1);
+                for (char y = 0; y < MAP_SIZE; ++y) {
+                    _objectiveMap.setAt({x, y}, random(2) == 1);
+                }
             }
-            }
+        }
+
+        void begin(){
+            _progressBar.begin();
         }
 
         void doAction(){
@@ -254,18 +270,19 @@ struct Game {
                     }
                 }
             } else if (_state == GameState::GameOver) {
-            // feedback ?
-            if (_controller.isButtonJustDown()) {
-                _currentMap.clear();
-                _cursor.position = {0,0};
-                _state = GameState::None;
-            }
+                // feedback ?
+                if (_controller.isButtonJustDown()) {
+                    _currentMap.clear();
+                    _cursor.position = {0,0};
+                    _state = GameState::None;
+                }
             } else if (_state == GameState::Win) {
-            // feedback
+                // feedback
             }
 
             _controller.doAction();
             _winLight.doAction();
+            _progressBar.doAction();
         }
 
         void render(){
@@ -296,8 +313,27 @@ struct Game {
 
 Game game;
 
+void setup() {
+    pinMode(WIN_LED_ID, OUTPUT);
+    pinMode(JOY_BUTTON_ID, INPUT);
+    pinMode(BUTTON_ID, INPUT);
+    lc.shutdown(0,false);
+    /* Set the brightness to a medium values */
+    lc.setIntensity(0,0);
+    lc.clearDisplay(0);
+    Serial.begin(9600);
+    game.begin();
+
+     Serial.println(0xFF0000, HEX);
+     Serial.println(Color(0,255,0).toGRB(), HEX);
+     Serial.println(Color(0,255,0).r);
+     Serial.println(Color(0,255,0).g);
+     Serial.println(Color(0,255,0).b);
+     Serial.println(uint32_t(255) << 16, HEX);
+}
+
 void loop() { 
-  
+    
     game.doAction();
     game.render();
     //sprintf(textBuffer, "_cursor x: %d, y: %d", _objectiveMap.getAt(0,0), 10);
