@@ -69,6 +69,20 @@ struct Color {
         inline bool operator!=(const Color& rhs) const { return r != rhs.r || g != rhs.g || b != rhs.b; }
 };
 
+enum class ProgressBarState : byte { 
+    None = 0,
+    Animated = 1,
+    Fail = 2,
+};
+
+enum class GameState : byte { 
+    None = 0,
+    ShowObjective = 1,
+    RetreiveObjective = 2,
+    GameOver = 3,
+    Win = 4
+};
+
 struct ProgressBar {
     private:
         Adafruit_NeoPixel strip;
@@ -76,15 +90,27 @@ struct ProgressBar {
         uint16_t maxProgress = 10;
         const Color DONE_PROGRESS_COLOR = Color(0,.15,0);
         const Color PROGRESS_COLOR = Color(.15,.15,.15);
+        const Color FAIL_COLOR = Color(.15,0,0);
         Color currentProgressColor = PROGRESS_COLOR;
+        ProgressBarState state = ProgressBarState::None;
 
     public:
         ProgressBar(uint16_t ledAmount, int16_t ledInputPin = 6, neoPixelType ledType = NEO_GRB + NEO_KHZ800) : strip(ledAmount, ledInputPin, ledType) {
         }
 
-        void initialize(uint16_t currentProgress, uint16_t maxProgress) {
-            this->currentProgress = currentProgress;
+        void resetStateAndProgress(uint16_t maxProgress) {
+            this->currentProgress = 0;
             this->maxProgress = maxProgress;
+            setState(ProgressBarState::None);
+        }
+
+        ProgressBarState getState() const {
+            return this->state;
+        }
+
+        void setState(ProgressBarState state) {
+            this->state = state;
+            render();
         }
 
         void setProgressWithAnim(uint16_t progress = 1){
@@ -98,10 +124,11 @@ struct ProgressBar {
             return this->strip.numPixels();
         }
 
-        void begin() {
+        void initialize(uint16_t maxProgress) {
             this->strip.begin();
             this->strip.setBrightness(50);
             this->strip.show();
+            resetStateAndProgress(maxProgress);
         }
 
         const unsigned long CHANGE_STEP_TIME_FREQUENCY = 1000;
@@ -109,19 +136,21 @@ struct ProgressBar {
         bool currentProgressionOn = false;
 
         void doAction(){
-            unsigned long currentMillis = millis();
+            if (state == ProgressBarState::Animated){
+                unsigned long currentMillis = millis();
 
-            if (currentMillis >= changeStepTime){
-                changeStepTime += CHANGE_STEP_TIME_FREQUENCY;
-                currentProgressionOn = !currentProgressionOn;
-                render();
-            }
-
-            if (currentProgressColor != PROGRESS_COLOR){
-                currentProgressColor = Color::moveTowards(currentProgressColor, PROGRESS_COLOR, 0.0025);
-
-                if (currentProgressionOn)
+                if (currentMillis >= changeStepTime){
+                    changeStepTime += CHANGE_STEP_TIME_FREQUENCY;
+                    currentProgressionOn = !currentProgressionOn;
                     render();
+                }
+
+                if (currentProgressColor != PROGRESS_COLOR){
+                    currentProgressColor = Color::moveTowards(currentProgressColor, PROGRESS_COLOR, 0.0025);
+
+                    if (currentProgressionOn)
+                        render();
+                }
             }
         }
 
@@ -135,7 +164,10 @@ struct ProgressBar {
             }
 
             for (uint16_t i = doneProgress; i < doneProgress + ledPerProgress; ++i){
-                strip.setPixelColor(i, currentProgressionOn ? currentProgressColor.toGRB() : 0);
+                if (state == ProgressBarState::Fail)
+                    strip.setPixelColor(i, FAIL_COLOR.toGRB());
+                else
+                    strip.setPixelColor(i, currentProgressionOn && state == ProgressBarState::Animated ? currentProgressColor.toGRB() : 0);
             }
 
             for (uint16_t i = doneProgress + ledPerProgress; i < getLedAmount(); ++i){
@@ -319,14 +351,6 @@ const int responseDelay = 1000;   // response delay of the mouse, in ms
 
 char textBuffer[40];
 
-enum class GameState : unsigned char { 
-    None = 0,
-    ShowObjective = 1,
-    RetreiveObjective = 2,
-    GameOver = 3,
-    Win = 4
-};
-
 struct Game {
     private:
         GameState _state;
@@ -344,12 +368,10 @@ struct Game {
                     _objectiveMap.setAt({x, y}, random(2) == 1);
                 }
             }
-
-            _progressBar.initialize(0, _objectiveMap.getOnAmount());
         }
 
-        void begin(){
-            _progressBar.begin();
+        void initialize(){
+            _progressBar.initialize(_objectiveMap.getOnAmount());
         }
 
         void doAction(){
@@ -358,6 +380,7 @@ struct Game {
             } else if (_state == GameState::ShowObjective) {
                 if (_controller.isButtonJustDown()) {
                     _state = GameState::RetreiveObjective;
+                    _progressBar.setState(ProgressBarState::Animated);
                 }
             } else if (_state == GameState::RetreiveObjective) {
                 _cursor.doAction();
@@ -365,6 +388,7 @@ struct Game {
                 if (_controller.isButtonJustDown()){
                     if (!_objectiveMap.getAt(_cursor.position)) {
                         _state = GameState::GameOver;
+                        _progressBar.setState(ProgressBarState::Fail);
                     } else {
                         _currentMap.setAt(_cursor.position, true);
                         _winLight.switchToFor(true, 1000);
@@ -373,10 +397,9 @@ struct Game {
                     }
                 }
             } else if (_state == GameState::GameOver) {
-                // feedback ?
                 if (_controller.isButtonJustDown()) {
                     _currentMap.clear();
-                    _progressBar.initialize(0, _objectiveMap.getOnAmount());
+                    _progressBar.resetStateAndProgress(_objectiveMap.getOnAmount());
                     _cursor.position = {0,0};
                     _state = GameState::None;
                 }
@@ -426,7 +449,7 @@ void setup() {
     lc.setIntensity(0,0);
     lc.clearDisplay(0);
     Serial.begin(9600);
-    game.begin();
+    game.initialize();
 }
 
 void loop() { 
