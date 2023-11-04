@@ -1,3 +1,5 @@
+#include <Array.h>
+
 #include <Adafruit_NeoPixel.h>
 
 //We always have to include the library
@@ -124,11 +126,10 @@ struct ProgressBar {
             return this->strip.numPixels();
         }
 
-        void initialize(uint16_t maxProgress) {
+        void initialize() {
             this->strip.begin();
             this->strip.setBrightness(50);
             this->strip.show();
-            resetStateAndProgress(maxProgress);
         }
 
         const unsigned long CHANGE_STEP_TIME_FREQUENCY = 1000;
@@ -196,6 +197,20 @@ struct Map {
         bool _map[MAP_SIZE][MAP_SIZE];
 
     public:
+        Array<Vector2, MAP_SIZE * MAP_SIZE> getOffPositions() const {
+            Array<Vector2, MAP_SIZE * MAP_SIZE> offPositions;
+
+            for (char x = 0; x < MAP_SIZE; ++x){
+                for (char y = 0; y < MAP_SIZE; ++y){
+                    if (!this->getAt({x, y})){
+                        offPositions.push_back({x, y});
+                    }
+                }
+            }
+
+            return offPositions;
+        }
+
         byte getOnAmount(){
             byte amount = 0;
 
@@ -207,9 +222,9 @@ struct Map {
             }
 
             return amount;
-        } 
+        }
 
-        bool getAt(Vector2 position) {
+        bool getAt(Vector2 position) const {
             return this->_map[position.x][position.y];
         }
 
@@ -224,6 +239,19 @@ struct Map {
                 }
             }
         }
+
+        inline bool operator==(const Map& rhs) { 
+            for (char x = 0; x < MAP_SIZE; ++x){
+                for (char y = 0; y < MAP_SIZE; ++y){
+                    if (this->getAt({x, y}) != rhs.getAt({x,y}))
+                        return false;
+                }
+            }
+
+            return true;
+        }
+
+        inline bool operator!=(const Map& rhs) { return !(*this == rhs); }
 };
 
 struct Light {
@@ -360,18 +388,26 @@ struct Game {
         Cursor _cursor;
         Light _winLight;
         ProgressBar _progressBar;
+        uint16_t _level = 1;
 
     public:
         Game() : _cursor(_currentMap, _controller), _winLight(WIN_LED_ID), _progressBar(10) {
-            for (char x = 0; x < MAP_SIZE; ++x) {
-                for (char y = 0; y < MAP_SIZE; ++y) {
-                    _objectiveMap.setAt({x, y}, random(2) == 1);
-                }
-            }
+            
         }
 
         void initialize(){
-            _progressBar.initialize(_objectiveMap.getOnAmount());
+            _progressBar.initialize();
+            setNewObjectiveMap();
+        }
+
+        void setNewObjectiveMap(){
+            auto offPositions = _objectiveMap.getOffPositions();
+            
+            for (byte i = _objectiveMap.getOnAmount(); i < _level; ++i){
+                long randomIndex = random(offPositions.size());
+                _objectiveMap.setAt(offPositions[randomIndex], true);
+                offPositions.remove(randomIndex);
+            }
         }
 
         void doAction(){
@@ -391,9 +427,11 @@ struct Game {
                         _progressBar.setState(ProgressBarState::Fail);
                     } else {
                         _currentMap.setAt(_cursor.position, true);
-                        _winLight.switchToFor(true, 1000);
                         _progressBar.setProgressWithAnim(_currentMap.getOnAmount());
-                        // TODO: si plus rien à trouver: win feedback        
+                        _winLight.switchToFor(true, 1000);
+
+                        if (_currentMap == _objectiveMap)
+                            _state = GameState::Win;
                     }
                 }
             } else if (_state == GameState::GameOver) {
@@ -404,7 +442,13 @@ struct Game {
                     _state = GameState::None;
                 }
             } else if (_state == GameState::Win) {
-                // feedback
+                if (_controller.isButtonJustDown()) {
+                    _state = GameState::ShowObjective;
+                    _currentMap.clear();
+                    ++_level;
+                    setNewObjectiveMap();
+                    _progressBar.resetStateAndProgress(_objectiveMap.getOnAmount());
+                }
             }
 
             _controller.doAction();
@@ -434,6 +478,14 @@ struct Game {
                         lc.setLed(0, y, x, true);
                     }
                 }
+            } else if (_state == GameState::Win){
+                for (char x = 0; x < MAP_SIZE; ++x) {
+                    for (char y = 0; y < MAP_SIZE; ++y) {
+                        lc.setLed(0, y, x, _currentMap.getAt({x, y}));
+                    }
+                }
+
+                // win feedback        
             }
         }
 };
