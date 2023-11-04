@@ -73,8 +73,9 @@ struct Color {
 
 enum class ProgressBarState : byte { 
     None = 0,
-    Animated = 1,
+    AnimatedProgression = 1,
     Fail = 2,
+    Win,
 };
 
 enum class GameState : byte { 
@@ -112,6 +113,13 @@ struct ProgressBar {
 
         void setState(ProgressBarState state) {
             this->state = state;
+            changeStepTime = millis() + CHANGE_STEP_TIME_FREQUENCY;
+
+            if (state == ProgressBarState::AnimatedProgression)
+                currentProgressionOn = false;
+            else if (state == ProgressBarState::Win)
+                currentProgressionOn = true;
+
             render();
         }
 
@@ -137,7 +145,7 @@ struct ProgressBar {
         bool currentProgressionOn = false;
 
         void doAction(){
-            if (state == ProgressBarState::Animated){
+            if (state == ProgressBarState::AnimatedProgression){
                 unsigned long currentMillis = millis();
 
                 if (currentMillis >= changeStepTime){
@@ -152,26 +160,50 @@ struct ProgressBar {
                     if (currentProgressionOn)
                         render();
                 }
+            } else if (state == ProgressBarState::Win){
+                unsigned long currentMillis = millis();
+
+                if (currentMillis >= changeStepTime){
+                    changeStepTime += CHANGE_STEP_TIME_FREQUENCY;
+                    currentProgressionOn = !currentProgressionOn;
+                    render();
+                }
             }
         }
 
     private:
         void render() {
             int ledPerProgress = max(1, map(1, 0, maxProgress, 0, getLedAmount()));
-            int doneProgress = map(currentProgress, 0, maxProgress, 0, getLedAmount());
-
-            for (uint16_t i = 0; i < doneProgress; ++i){
-                strip.setPixelColor(i, DONE_PROGRESS_COLOR.toGRB());
+            auto ledAmount = getLedAmount();
+            int doneProgress = 0;
+            
+            if (state != ProgressBarState::None){
+                if (state == ProgressBarState::Win){
+                    doneProgress = ledAmount;
+                } else {
+                    doneProgress = map(currentProgress, 0, maxProgress, 0, ledAmount);
+                    
+                    if (currentProgress + 1 == maxProgress)
+                        ledPerProgress = ledAmount - doneProgress; 
+                }
             }
 
-            for (uint16_t i = doneProgress; i < doneProgress + ledPerProgress; ++i){
+            for (uint16_t i = 0; i < doneProgress; ++i){
+                if (state == ProgressBarState::Win){
+                    strip.setPixelColor(i, currentProgressionOn ? DONE_PROGRESS_COLOR.toGRB() : 0);
+                } else {
+                    strip.setPixelColor(i, DONE_PROGRESS_COLOR.toGRB());
+                }
+            }
+
+            for (uint16_t i = doneProgress; i < min(ledAmount, doneProgress + ledPerProgress); ++i){
                 if (state == ProgressBarState::Fail)
                     strip.setPixelColor(i, FAIL_COLOR.toGRB());
                 else
-                    strip.setPixelColor(i, currentProgressionOn && state == ProgressBarState::Animated ? currentProgressColor.toGRB() : 0);
+                    strip.setPixelColor(i, currentProgressionOn && state == ProgressBarState::AnimatedProgression ? currentProgressColor.toGRB() : 0);
             }
 
-            for (uint16_t i = doneProgress + ledPerProgress; i < getLedAmount(); ++i){
+            for (uint16_t i = doneProgress + ledPerProgress; i < ledAmount; ++i){
                 strip.setPixelColor(i, 0);
             }
 
@@ -411,12 +443,14 @@ struct Game {
         }
 
         void doAction(){
-            if (_state == GameState::None){
+            if (_state == GameState::None){ {
                 _state = GameState::ShowObjective;
+                _progressBar.resetStateAndProgress(_objectiveMap.getOnAmount());
+            }
             } else if (_state == GameState::ShowObjective) {
                 if (_controller.isButtonJustDown()) {
                     _state = GameState::RetreiveObjective;
-                    _progressBar.setState(ProgressBarState::Animated);
+                    _progressBar.setState(ProgressBarState::AnimatedProgression);
                 }
             } else if (_state == GameState::RetreiveObjective) {
                 _cursor.doAction();
@@ -430,8 +464,10 @@ struct Game {
                         _progressBar.setProgressWithAnim(_currentMap.getOnAmount());
                         _winLight.switchToFor(true, 1000);
 
-                        if (_currentMap == _objectiveMap)
+                        if (_currentMap == _objectiveMap) {
                             _state = GameState::Win;
+                            _progressBar.setState(ProgressBarState::Win);
+                        }
                     }
                 }
             } else if (_state == GameState::GameOver) {
