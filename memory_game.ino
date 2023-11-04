@@ -17,12 +17,173 @@ const int JOY_Y_ID = A1;
 
 LedControl lc = LedControl(LED_CONTROL_DIN_ID, LED_CONTROL_CLK_ID, LED_CONTROL_CS_ID, 1);
 
+float lerp(float from, float to, float ratio){
+    return (to - from) * ratio + from;
+}
+
+float inverseLerp(float value, float from, float to){
+    return (value - from) / (to - from);
+}
+
+float remap(float value, float fromRangeStart, float fromRangeEnd, float toRangeStart, float toRangeEnd){
+    return lerp(toRangeStart, toRangeEnd, inverseLerp(value, fromRangeStart, fromRangeEnd));
+}
+
+struct Color {
+    public:
+        float r;
+        float g;
+        float b;
+
+        Color() : r(0), g(0), b(0) {}
+        Color(float r, float g, float b): r(r), g(g), b(b) {}
+
+        inline const uint32_t toGRB() const {
+            return (uint32_t(g * 255) << 16) | (uint32_t(r * 255) << 8) | uint32_t(b * 255); 
+        }
+
+        inline const uint32_t toRGB() const {
+            return (uint32_t(r * 255) << 16) | (uint32_t(g * 255) << 8) | uint32_t(b * 255); 
+        }
+
+        inline static Color lerp(const Color& a, const Color& b, float ratio) {
+            return Color(::lerp(a.r, b.r, ratio), ::lerp(a.g, b.g, ratio), ::lerp(a.r, b.r, ratio));
+        }
+
+        inline static Color moveTowards(const Color& a, const Color& b, float distance) {
+            Color delta = b - a;
+            float currentDistance = sqrtf(delta.r * delta.r + delta.g * delta.g + delta.b * delta.b);
+            
+            if (currentDistance < distance)
+                return b;
+
+            Color normalizedDelta = delta / currentDistance;
+            return a + normalizedDelta * distance;
+        }
+
+        inline Color operator-(const Color rhs) const { return Color(r-rhs.r, g-rhs.g, b-rhs.b); }
+        inline Color operator+(const Color rhs) const { return Color(r+rhs.r, g+rhs.g, b+rhs.b); }
+        inline Color operator/(const float factor) const { return Color(r/factor, g/factor, b/factor); }
+        inline Color operator*(const float factor) const { return Color(r*factor, g*factor, b*factor); }
+        inline bool operator==(const Color& rhs) const { return r == rhs.r && g == rhs.g && b == rhs.b; }
+        inline bool operator!=(const Color& rhs) const { return r != rhs.r || g != rhs.g || b != rhs.b; }
+};
+
+enum class ProgressBarState : byte { 
+    None = 0,
+    Animated = 1,
+    Fail = 2,
+};
+
+enum class GameState : byte { 
+    None = 0,
+    ShowObjective = 1,
+    RetreiveObjective = 2,
+    GameOver = 3,
+    Win = 4
+};
+
+struct ProgressBar {
+    private:
+        Adafruit_NeoPixel strip;
+        uint16_t currentProgress = 0;
+        uint16_t maxProgress = 10;
+        const Color DONE_PROGRESS_COLOR = Color(0,.15,0);
+        const Color PROGRESS_COLOR = Color(.15,.15,.15);
+        const Color FAIL_COLOR = Color(.15,0,0);
+        Color currentProgressColor = PROGRESS_COLOR;
+        ProgressBarState state = ProgressBarState::None;
+
+    public:
+        ProgressBar(uint16_t ledAmount, int16_t ledInputPin = 6, neoPixelType ledType = NEO_GRB + NEO_KHZ800) : strip(ledAmount, ledInputPin, ledType) {
+        }
+
+        void resetStateAndProgress(uint16_t maxProgress) {
+            this->currentProgress = 0;
+            this->maxProgress = maxProgress;
+            setState(ProgressBarState::None);
+        }
+
+        ProgressBarState getState() const {
+            return this->state;
+        }
+
+        void setState(ProgressBarState state) {
+            this->state = state;
+            render();
+        }
+
+        void setProgressWithAnim(uint16_t progress = 1){
+            currentProgress = min(progress, maxProgress);
+            currentProgressColor = DONE_PROGRESS_COLOR;
+            changeStepTime = millis() + CHANGE_STEP_TIME_FREQUENCY;
+            currentProgressionOn = true;
+        }
+
+        const uint16_t getLedAmount() const {
+            return this->strip.numPixels();
+        }
+
+        void initialize(uint16_t maxProgress) {
+            this->strip.begin();
+            this->strip.setBrightness(50);
+            this->strip.show();
+            resetStateAndProgress(maxProgress);
+        }
+
+        const unsigned long CHANGE_STEP_TIME_FREQUENCY = 1000;
+        unsigned long changeStepTime = 0;
+        bool currentProgressionOn = false;
+
+        void doAction(){
+            if (state == ProgressBarState::Animated){
+                unsigned long currentMillis = millis();
+
+                if (currentMillis >= changeStepTime){
+                    changeStepTime += CHANGE_STEP_TIME_FREQUENCY;
+                    currentProgressionOn = !currentProgressionOn;
+                    render();
+                }
+
+                if (currentProgressColor != PROGRESS_COLOR){
+                    currentProgressColor = Color::moveTowards(currentProgressColor, PROGRESS_COLOR, 0.0025);
+
+                    if (currentProgressionOn)
+                        render();
+                }
+            }
+        }
+
+    private:
+        void render() {
+            int ledPerProgress = max(1, map(1, 0, maxProgress, 0, getLedAmount()));
+            int doneProgress = map(currentProgress, 0, maxProgress, 0, getLedAmount());
+
+            for (uint16_t i = 0; i < doneProgress; ++i){
+                strip.setPixelColor(i, DONE_PROGRESS_COLOR.toGRB());
+            }
+
+            for (uint16_t i = doneProgress; i < doneProgress + ledPerProgress; ++i){
+                if (state == ProgressBarState::Fail)
+                    strip.setPixelColor(i, FAIL_COLOR.toGRB());
+                else
+                    strip.setPixelColor(i, currentProgressionOn && state == ProgressBarState::Animated ? currentProgressColor.toGRB() : 0);
+            }
+
+            for (uint16_t i = doneProgress + ledPerProgress; i < getLedAmount(); ++i){
+                strip.setPixelColor(i, 0);
+            }
+
+            this->strip.show();
+        }
+};
+
 struct Vector2 {
     public:
         char x;
         char y;
 
-        bool isZero(){
+        const bool isZero() const {
             return x == 0 && y == 0; 
         }
 
@@ -35,12 +196,25 @@ struct Map {
         bool _map[MAP_SIZE][MAP_SIZE];
 
     public:
+        byte getOnAmount(){
+            byte amount = 0;
+
+            for (char x = 0; x < MAP_SIZE; ++x){
+                for (char y = 0; y < MAP_SIZE; ++y){
+                    if (this->getAt({x, y}))
+                        ++amount;
+                }
+            }
+
+            return amount;
+        } 
+
         bool getAt(Vector2 position) {
-        return this->_map[position.x][position.y];
+            return this->_map[position.x][position.y];
         }
 
         void setAt(Vector2 position, bool isOn) {
-        this->_map[position.x][position.y] = isOn;
+            this->_map[position.x][position.y] = isOn;
         }
 
         void clear(){
@@ -87,27 +261,27 @@ struct Light {
 struct Controller {
     private: 
         char readAxis(byte thisAxis) {
-        // read the analog input:
-        int reading = analogRead(thisAxis);
+            // read the analog input:
+            int reading = analogRead(thisAxis);
 
-        // map the reading from the analog input range to the output range:
-        reading = map(reading, 0, 1023, 0, 3);
-        return reading - 1;
+            // map the reading from the analog input range to the output range:
+            reading = map(reading, 0, 1023, 0, 3);
+            return reading - 1;
         }
 
         bool previousButtonDownState = false;
 
     public:
         Vector2 getAxis(){
-        return {readAxis(JOY_X_ID), readAxis(JOY_Y_ID)};
+            return {readAxis(JOY_X_ID), readAxis(JOY_Y_ID)};
         }
 
         bool isButtonDown(){
-        return digitalRead(BUTTON_ID);
+            return digitalRead(BUTTON_ID);
         }
 
         bool isButtonJustDown(){
-        return !previousButtonDownState && digitalRead(BUTTON_ID);
+            return !previousButtonDownState && digitalRead(BUTTON_ID);
         } 
 
         void doAction(){
@@ -119,39 +293,39 @@ struct Cursor {
     private:
         const long LED_BLINK_FREQUENCY = 300;
         const long MOVE_FREQUENCY = 500;
-        unsigned long lastMillis;
-        bool ledIsOn;
-        Map& map;
-        Controller& controller;
+        unsigned long _lastMillis;
+        bool _ledIsOn;
+        Map& _map;
+        Controller& _controller;
 
-        long previousMoveMillis;
-        Vector2 previousAxis;
+        long _previousMoveMillis;
+        Vector2 _previousAxis;
 
     public:
         Vector2 position;
 
-        Cursor(Map& map, Controller& controller) : map(map), controller(controller) {
+        Cursor(Map& _map, Controller& _controller) : _map(_map), _controller(_controller) {
             
         }
 
         bool getLedIsOn(){
-            return this->ledIsOn;
+            return this->_ledIsOn;
         }
 
         void doAction(){
             unsigned long currentMillis = millis();
 
-            Vector2 currentAxis = controller.getAxis();
+            Vector2 currentAxis = _controller.getAxis();
 
-            if (currentMillis > lastMillis + LED_BLINK_FREQUENCY) {
-                lastMillis = currentMillis;
-                ledIsOn = !ledIsOn;
+            if (currentMillis > _lastMillis + LED_BLINK_FREQUENCY) {
+                _lastMillis = currentMillis;
+                _ledIsOn = !_ledIsOn;
             }
 
-            if (currentAxis != previousAxis) {
-                previousAxis = currentAxis;
+            if (currentAxis != _previousAxis) {
+                _previousAxis = currentAxis;
                 move(currentAxis, currentMillis);
-            } else if (currentMillis > previousMoveMillis + MOVE_FREQUENCY && !currentAxis.isZero()){
+            } else if (currentMillis > _previousMoveMillis + MOVE_FREQUENCY && !currentAxis.isZero()){
                 move(currentAxis, currentMillis);
             }
         }
@@ -167,7 +341,7 @@ struct Cursor {
       if (this->position.y < 0)
         this->position.y += MAP_SIZE;
 
-      this->previousMoveMillis = currentMillis;
+      this->_previousMoveMillis = currentMillis;
     }
 };
 
@@ -177,94 +351,84 @@ const int responseDelay = 1000;   // response delay of the mouse, in ms
 
 char textBuffer[40];
 
-void setup() {
-    pinMode(WIN_LED_ID, OUTPUT);
-    pinMode(JOY_BUTTON_ID, INPUT);
-    pinMode(BUTTON_ID, INPUT);
-    lc.shutdown(0,false);
-    /* Set the brightness to a medium values */
-    lc.setIntensity(0,0);
-    lc.clearDisplay(0);
-    Serial.begin(9600);
-}
-
-enum class GameState : unsigned char { 
-    None = 0,
-    ShowObjective = 1,
-    RetreiveObjective = 2,
-    GameOver = 3,
-    Win = 4
-};
-
 struct Game {
     private:
-        GameState state;
-        Controller controller;
-        Map objectiveMap;
-        Map currentMap;
-        Cursor cursor;
-        Light winLight;
+        GameState _state;
+        Controller _controller;
+        Map _objectiveMap;
+        Map _currentMap;
+        Cursor _cursor;
+        Light _winLight;
+        ProgressBar _progressBar;
 
     public:
-        Game() : cursor(currentMap, controller), winLight(WIN_LED_ID) {
+        Game() : _cursor(_currentMap, _controller), _winLight(WIN_LED_ID), _progressBar(10) {
             for (char x = 0; x < MAP_SIZE; ++x) {
-            for (char y = 0; y < MAP_SIZE; ++y) {
-                objectiveMap.setAt({x, y}, random(2) == 1);
+                for (char y = 0; y < MAP_SIZE; ++y) {
+                    _objectiveMap.setAt({x, y}, random(2) == 1);
+                }
             }
-            }
+        }
+
+        void initialize(){
+            _progressBar.initialize(_objectiveMap.getOnAmount());
         }
 
         void doAction(){
-            if (state == GameState::None){
-                state = GameState::ShowObjective;
-            } else if (state == GameState::ShowObjective) {
-                if (controller.isButtonJustDown()) {
-                    state = GameState::RetreiveObjective;
+            if (_state == GameState::None){
+                _state = GameState::ShowObjective;
+            } else if (_state == GameState::ShowObjective) {
+                if (_controller.isButtonJustDown()) {
+                    _state = GameState::RetreiveObjective;
+                    _progressBar.setState(ProgressBarState::Animated);
                 }
-            } else if (state == GameState::RetreiveObjective) {
-                cursor.doAction();
+            } else if (_state == GameState::RetreiveObjective) {
+                _cursor.doAction();
 
-                if (controller.isButtonJustDown()){
-                    if (!objectiveMap.getAt(cursor.position)) {
-                        state = GameState::GameOver;
+                if (_controller.isButtonJustDown()){
+                    if (!_objectiveMap.getAt(_cursor.position)) {
+                        _state = GameState::GameOver;
+                        _progressBar.setState(ProgressBarState::Fail);
                     } else {
-                        currentMap.setAt(cursor.position, true);
-                        winLight.switchToFor(true, 1000);
+                        _currentMap.setAt(_cursor.position, true);
+                        _winLight.switchToFor(true, 1000);
+                        _progressBar.setProgressWithAnim(_currentMap.getOnAmount());
                         // TODO: si plus rien à trouver: win feedback        
                     }
                 }
-            } else if (state == GameState::GameOver) {
-            // feedback ?
-            if (controller.isButtonJustDown()) {
-                currentMap.clear();
-                cursor.position = {0,0};
-                state = GameState::None;
-            }
-            } else if (state == GameState::Win) {
-            // feedback
+            } else if (_state == GameState::GameOver) {
+                if (_controller.isButtonJustDown()) {
+                    _currentMap.clear();
+                    _progressBar.resetStateAndProgress(_objectiveMap.getOnAmount());
+                    _cursor.position = {0,0};
+                    _state = GameState::None;
+                }
+            } else if (_state == GameState::Win) {
+                // feedback
             }
 
-            controller.doAction();
-            winLight.doAction();
+            _controller.doAction();
+            _winLight.doAction();
+            _progressBar.doAction();
         }
 
         void render(){
-            if (state == GameState::RetreiveObjective) {
+            if (_state == GameState::RetreiveObjective) {
                 for (char x = 0; x < MAP_SIZE; ++x) {
                     for (char y = 0; y < MAP_SIZE; ++y) {
-                        if (!(x == cursor.position.x && y == cursor.position.y))
-                            lc.setLed(0, y, x, currentMap.getAt({x, y}));
+                        if (!(x == _cursor.position.x && y == _cursor.position.y))
+                            lc.setLed(0, y, x, _currentMap.getAt({x, y}));
                     }
                 }
 
-                lc.setLed(0, cursor.position.y, cursor.position.x, cursor.getLedIsOn());
-            } else if (state == GameState::ShowObjective) {
+                lc.setLed(0, _cursor.position.y, _cursor.position.x, _cursor.getLedIsOn());
+            } else if (_state == GameState::ShowObjective) {
                 for (char x = 0; x < MAP_SIZE; ++x) {
                     for (char y = 0; y < MAP_SIZE; ++y) {
-                        lc.setLed(0, y, x, objectiveMap.getAt({x, y}));
+                        lc.setLed(0, y, x, _objectiveMap.getAt({x, y}));
                     }
                 }
-            } else if (state == GameState::GameOver){
+            } else if (_state == GameState::GameOver){
                 for (char x = 0; x < MAP_SIZE; ++x) {
                     for (char y = 0; y < MAP_SIZE; ++y) {
                         lc.setLed(0, y, x, true);
@@ -276,11 +440,23 @@ struct Game {
 
 Game game;
 
+void setup() {
+    pinMode(WIN_LED_ID, OUTPUT);
+    pinMode(JOY_BUTTON_ID, INPUT);
+    pinMode(BUTTON_ID, INPUT);
+    lc.shutdown(0,false);
+    /* Set the brightness to a medium values */
+    lc.setIntensity(0,0);
+    lc.clearDisplay(0);
+    Serial.begin(9600);
+    game.initialize();
+}
+
 void loop() { 
-  
+    
     game.doAction();
     game.render();
-    //sprintf(textBuffer, "cursor x: %d, y: %d", objectiveMap.getAt(0,0), 10);
+    //sprintf(textBuffer, "_cursor x: %d, y: %d", _objectiveMap.getAt(0,0), 10);
     //Serial.println(textBuffer);
     //delay(1000);
 }
