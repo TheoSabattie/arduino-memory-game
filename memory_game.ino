@@ -15,24 +15,58 @@ const int JOY_BUTTON_ID = 8;
 const int JOY_X_ID = A0;
 const int JOY_Y_ID = A1;
 
-
 LedControl lc = LedControl(LED_CONTROL_DIN_ID, LED_CONTROL_CLK_ID, LED_CONTROL_CS_ID, 1);
+
+float lerp(float from, float to, float ratio){
+    return (to - from) * ratio + from;
+}
+
+float inverseLerp(float value, float from, float to){
+    return (value - from) / (to - from);
+}
+
+float remap(float value, float fromRangeStart, float fromRangeEnd, float toRangeStart, float toRangeEnd){
+    return lerp(toRangeStart, toRangeEnd, inverseLerp(value, fromRangeStart, fromRangeEnd));
+}
 
 struct Color {
     public:
-        byte r;
-        byte g;
-        byte b;
+        float r;
+        float g;
+        float b;
 
-        Color(byte r, byte g, byte b): r(r), g(g), b(b) {}
+        Color() : r(0), g(0), b(0) {}
+        Color(float r, float g, float b): r(r), g(g), b(b) {}
 
-        uint32_t toGRB(){
-            return (uint32_t(g) << 16) | (uint32_t(r) << 8) | b; 
+        inline const uint32_t toGRB() const {
+            return (uint32_t(g * 255) << 16) | (uint32_t(r * 255) << 8) | uint32_t(b * 255); 
         }
 
-        uint32_t toRGB(){
-            return (uint32_t(r) << 16) | (uint32_t(g) << 8) | b; 
+        inline const uint32_t toRGB() const {
+            return (uint32_t(r * 255) << 16) | (uint32_t(g * 255) << 8) | uint32_t(b * 255); 
         }
+
+        inline static Color lerp(const Color& a, const Color& b, float ratio) {
+            return Color(::lerp(a.r, b.r, ratio), ::lerp(a.g, b.g, ratio), ::lerp(a.r, b.r, ratio));
+        }
+
+        inline static Color moveTowards(const Color& a, const Color& b, float distance) {
+            Color delta = b - a;
+            float currentDistance = sqrtf(delta.r * delta.r + delta.g * delta.g + delta.b * delta.b);
+            
+            if (currentDistance < distance)
+                return b;
+
+            Color normalizedDelta = delta / currentDistance;
+            return a + normalizedDelta * distance;
+        }
+
+        inline Color operator-(const Color rhs) const { return Color(r-rhs.r, g-rhs.g, b-rhs.b); }
+        inline Color operator+(const Color rhs) const { return Color(r+rhs.r, g+rhs.g, b+rhs.b); }
+        inline Color operator/(const float factor) const { return Color(r/factor, g/factor, b/factor); }
+        inline Color operator*(const float factor) const { return Color(r*factor, g*factor, b*factor); }
+        inline bool operator==(const Color& rhs) const { return r == rhs.r && g == rhs.g && b == rhs.b; }
+        inline bool operator!=(const Color& rhs) const { return r != rhs.r || g != rhs.g || b != rhs.b; }
 };
 
 struct ProgressBar {
@@ -40,31 +74,84 @@ struct ProgressBar {
         Adafruit_NeoPixel strip;
         uint16_t currentProgress = 0;
         uint16_t maxProgress = 10;
+        const Color DONE_PROGRESS_COLOR = Color(0,.15,0);
+        const Color PROGRESS_COLOR = Color(.15,.15,.15);
+        Color currentProgressColor = PROGRESS_COLOR;
 
     public:
-        ProgressBar(uint16_t ledAmount, int16_t ledInputPin = 6, neoPixelType ledType = NEO_GRB + NEO_KHZ800) : strip(ledAmount, ledInputPin, ledType){
+        ProgressBar(uint16_t ledAmount, int16_t ledInputPin = 6, neoPixelType ledType = NEO_GRB + NEO_KHZ800) : strip(ledAmount, ledInputPin, ledType) {
+        }
+
+        void initialize(uint16_t currentProgress, uint16_t maxProgress) {
+            this->currentProgress = currentProgress;
+            this->maxProgress = maxProgress;
+        }
+
+        void setProgressWithAnim(uint16_t progress = 1){
+            currentProgress = min(progress, maxProgress);
+            currentProgressColor = DONE_PROGRESS_COLOR;
+            changeStepTime = millis() + CHANGE_STEP_TIME_FREQUENCY;
+            currentProgressionOn = true;
+        }
+
+        const uint16_t getLedAmount() const {
+            return this->strip.numPixels();
         }
 
         void begin() {
-            strip.begin();
-            strip.setBrightness(50);
-            strip.show();
+            this->strip.begin();
+            this->strip.setBrightness(50);
+            this->strip.show();
         }
+
+        const unsigned long CHANGE_STEP_TIME_FREQUENCY = 1000;
+        unsigned long changeStepTime = 0;
+        bool currentProgressionOn = false;
 
         void doAction(){
-            strip.setPixelColor(0, Color(255,0,0).toGRB());
-            strip.show();
+            unsigned long currentMillis = millis();
+
+            if (currentMillis >= changeStepTime){
+                changeStepTime += CHANGE_STEP_TIME_FREQUENCY;
+                currentProgressionOn = !currentProgressionOn;
+                render();
+            }
+
+            if (currentProgressColor != PROGRESS_COLOR){
+                currentProgressColor = Color::moveTowards(currentProgressColor, PROGRESS_COLOR, 0.0025);
+
+                if (currentProgressionOn)
+                    render();
+            }
+        }
+
+    private:
+        void render() {
+            int ledPerProgress = max(1, map(1, 0, maxProgress, 0, getLedAmount()));
+            int doneProgress = map(currentProgress, 0, maxProgress, 0, getLedAmount());
+
+            for (uint16_t i = 0; i < doneProgress; ++i){
+                strip.setPixelColor(i, DONE_PROGRESS_COLOR.toGRB());
+            }
+
+            for (uint16_t i = doneProgress; i < doneProgress + ledPerProgress; ++i){
+                strip.setPixelColor(i, currentProgressionOn ? currentProgressColor.toGRB() : 0);
+            }
+
+            for (uint16_t i = doneProgress + ledPerProgress; i < getLedAmount(); ++i){
+                strip.setPixelColor(i, 0);
+            }
+
+            this->strip.show();
         }
 };
-
-
 
 struct Vector2 {
     public:
         char x;
         char y;
 
-        bool isZero(){
+        const bool isZero() const {
             return x == 0 && y == 0; 
         }
 
@@ -77,12 +164,25 @@ struct Map {
         bool _map[MAP_SIZE][MAP_SIZE];
 
     public:
+        byte getOnAmount(){
+            byte amount = 0;
+
+            for (char x = 0; x < MAP_SIZE; ++x){
+                for (char y = 0; y < MAP_SIZE; ++y){
+                    if (this->getAt({x, y}))
+                        ++amount;
+                }
+            }
+
+            return amount;
+        } 
+
         bool getAt(Vector2 position) {
-        return this->_map[position.x][position.y];
+            return this->_map[position.x][position.y];
         }
 
         void setAt(Vector2 position, bool isOn) {
-        this->_map[position.x][position.y] = isOn;
+            this->_map[position.x][position.y] = isOn;
         }
 
         void clear(){
@@ -244,6 +344,8 @@ struct Game {
                     _objectiveMap.setAt({x, y}, random(2) == 1);
                 }
             }
+
+            _progressBar.initialize(0, _objectiveMap.getOnAmount());
         }
 
         void begin(){
@@ -266,6 +368,7 @@ struct Game {
                     } else {
                         _currentMap.setAt(_cursor.position, true);
                         _winLight.switchToFor(true, 1000);
+                        _progressBar.setProgressWithAnim(_currentMap.getOnAmount());
                         // TODO: si plus rien à trouver: win feedback        
                     }
                 }
@@ -273,6 +376,7 @@ struct Game {
                 // feedback ?
                 if (_controller.isButtonJustDown()) {
                     _currentMap.clear();
+                    _progressBar.initialize(0, _objectiveMap.getOnAmount());
                     _cursor.position = {0,0};
                     _state = GameState::None;
                 }
@@ -323,13 +427,6 @@ void setup() {
     lc.clearDisplay(0);
     Serial.begin(9600);
     game.begin();
-
-     Serial.println(0xFF0000, HEX);
-     Serial.println(Color(0,255,0).toGRB(), HEX);
-     Serial.println(Color(0,255,0).r);
-     Serial.println(Color(0,255,0).g);
-     Serial.println(Color(0,255,0).b);
-     Serial.println(uint32_t(255) << 16, HEX);
 }
 
 void loop() { 
