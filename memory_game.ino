@@ -32,6 +32,18 @@ float remap(float value, float fromRangeStart, float fromRangeEnd, float toRange
     return lerp(toRangeStart, toRangeEnd, inverseLerp(value, fromRangeStart, fromRangeEnd));
 }
 
+struct ExplanationsManager {
+    private:
+        Adafruit_NeoPixel strip = {5, 3, NEO_GRB + NEO_KHZ800};
+
+    public:
+        void initialize(){
+            strip.begin();
+            this->strip.begin();
+            this->strip.setBrightness(50);
+        }
+};
+
 struct Color {
     public:
         float r;
@@ -138,7 +150,7 @@ struct ProgressBar {
         void initialize() {
             this->strip.begin();
             this->strip.setBrightness(50);
-            this->strip.show();
+            resetStateAndProgress(maxProgress);
         }
 
         const unsigned long CHANGE_STEP_TIME_FREQUENCY = 1000;
@@ -289,7 +301,7 @@ struct Map {
 
 struct Controller {
     private: 
-        char readAxis(byte thisAxis) {
+        char readAxis(byte thisAxis) const {
             // read the analog input:
             int reading = analogRead(thisAxis);
 
@@ -338,7 +350,7 @@ struct Cursor {
             
         }
 
-        bool getLedIsOn(){
+        bool getLedIsOn() const {
             return this->_ledIsOn;
         }
 
