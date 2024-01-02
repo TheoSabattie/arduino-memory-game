@@ -5,6 +5,8 @@
 //We always have to include the library
 #include "LedControl.h"
 
+#include "Color.h"
+
 #define MAP_SIZE 8
 
 const int SCREEN_IN_DIN = 12;
@@ -20,69 +22,51 @@ const int Y_OUT = A1;
 
 LedControl lc = LedControl(SCREEN_IN_DIN, SCREEN_IN_CLK, SCREEN_IN_CS, 1);
 
-float lerp(float from, float to, float ratio){
-    return (to - from) * ratio + from;
-}
-
-float inverseLerp(float value, float from, float to){
-    return (value - from) / (to - from);
-}
-
-float remap(float value, float fromRangeStart, float fromRangeEnd, float toRangeStart, float toRangeEnd){
-    return lerp(toRangeStart, toRangeEnd, inverseLerp(value, fromRangeStart, fromRangeEnd));
-}
+enum class GameState : byte { 
+    None = 0,
+    ShowObjective = 1,
+    RetreiveObjective = 2,
+    GameOver = 3,
+    Win = 4
+};
 
 struct ExplanationsManager {
     private:
-        Adafruit_NeoPixel strip = {5, 3, NEO_GRB + NEO_KHZ800};
+        const int GAME_INDEX = 0;
+        const int LEVEL_INDEX = 1;
+        const int LOOK_AND_MEMORIZE_INDEX = 2;
+        const int GAME_OVER_INDEX = 4;
+        const int WIN_INDEX = 3;
+        const int REPRODUCE_FIGURE_INDEX = 5;
+        Adafruit_NeoPixel strip = {6, TUTO_IN, NEO_GRB + NEO_KHZ800};
+        GameState gameState;
+
+        void render(){
+            strip.setPixelColor(LOOK_AND_MEMORIZE_INDEX, (gameState == GameState::ShowObjective ? Color::white() : Color::black()).toGRB());
+            strip.setPixelColor(REPRODUCE_FIGURE_INDEX, (gameState == GameState::RetreiveObjective ? Color::white() : Color::black()).toGRB());
+            strip.setPixelColor(WIN_INDEX, (gameState == GameState::Win ? Color::green() : Color::black()).toGRB());
+            strip.setPixelColor(GAME_OVER_INDEX, (gameState == GameState::GameOver ? Color::red() : Color::black()).toGRB());
+            strip.show();
+            // todo: Game vs Level (progression)
+        }
 
     public:
         void initialize(){
-            strip.begin();
             this->strip.begin();
-            this->strip.setBrightness(50);
+            this->strip.setBrightness(5);
+        }
+
+        GameState getGameState() const {
+            return this->gameState;
+        }
+
+        void setGameState(GameState gameState){
+            this->gameState = gameState;
+            this->render();
         }
 };
 
-struct Color {
-    public:
-        float r;
-        float g;
-        float b;
 
-        Color() : r(0), g(0), b(0) {}
-        Color(float r, float g, float b): r(r), g(g), b(b) {}
-
-        inline const uint32_t toGRB() const {
-            return (uint32_t(g * 255) << 16) | (uint32_t(r * 255) << 8) | uint32_t(b * 255); 
-        }
-
-        inline const uint32_t toRGB() const {
-            return (uint32_t(r * 255) << 16) | (uint32_t(g * 255) << 8) | uint32_t(b * 255); 
-        }
-
-        inline static Color lerp(const Color& a, const Color& b, float ratio) {
-            return Color(::lerp(a.r, b.r, ratio), ::lerp(a.g, b.g, ratio), ::lerp(a.r, b.r, ratio));
-        }
-
-        inline static Color moveTowards(const Color& a, const Color& b, float distance) {
-            Color delta = b - a;
-            float currentDistance = sqrtf(delta.r * delta.r + delta.g * delta.g + delta.b * delta.b);
-            
-            if (currentDistance < distance)
-                return b;
-
-            Color normalizedDelta = delta / currentDistance;
-            return a + normalizedDelta * distance;
-        }
-
-        inline Color operator-(const Color rhs) const { return Color(r-rhs.r, g-rhs.g, b-rhs.b); }
-        inline Color operator+(const Color rhs) const { return Color(r+rhs.r, g+rhs.g, b+rhs.b); }
-        inline Color operator/(const float factor) const { return Color(r/factor, g/factor, b/factor); }
-        inline Color operator*(const float factor) const { return Color(r*factor, g*factor, b*factor); }
-        inline bool operator==(const Color& rhs) const { return r == rhs.r && g == rhs.g && b == rhs.b; }
-        inline bool operator!=(const Color& rhs) const { return r != rhs.r || g != rhs.g || b != rhs.b; }
-};
 
 enum class ProgressBarState : byte { 
     None = 0,
@@ -91,13 +75,7 @@ enum class ProgressBarState : byte {
     Win,
 };
 
-enum class GameState : byte { 
-    None = 0,
-    ShowObjective = 1,
-    RetreiveObjective = 2,
-    GameOver = 3,
-    Win = 4
-};
+
 
 struct ProgressBar {
     private:
@@ -149,7 +127,7 @@ struct ProgressBar {
 
         void initialize() {
             this->strip.begin();
-            this->strip.setBrightness(50);
+            this->strip.setBrightness(10);
             resetStateAndProgress(maxProgress);
         }
 
@@ -374,21 +352,22 @@ char textBuffer[40];
 
 struct Game {
     private:
-        GameState _state;
         Controller _controller;
         Map _objectiveMap;
         Map _currentMap;
         Cursor _cursor;
         ProgressBar _progressBar;
+        ExplanationsManager _explanations;
         uint16_t _level = 1;
 
     public:
-        Game() : _cursor(_currentMap, _controller), _progressBar(PROGRESSION_IN) {
+        Game() : _cursor(_currentMap, _controller), _progressBar(10, PROGRESSION_IN) {
             
         }
 
         void initialize(){
             _progressBar.initialize();
+            _explanations.initialize();
             setNewObjectiveMap();
         }
 
@@ -403,41 +382,43 @@ struct Game {
         }
 
         void doAction(){
-            if (_state == GameState::None){ {
-                _state = GameState::ShowObjective;
+            GameState state = _explanations.getGameState();
+
+            if (state == GameState::None){ {
+                _explanations.setGameState(GameState::ShowObjective);
                 _progressBar.resetStateAndProgress(_objectiveMap.getOnAmount());
             }
-            } else if (_state == GameState::ShowObjective) {
+            } else if (state == GameState::ShowObjective) {
                 if (_controller.isButtonJustDown()) {
-                    _state = GameState::RetreiveObjective;
+                    _explanations.setGameState(GameState::RetreiveObjective);
                     _progressBar.setState(ProgressBarState::AnimatedProgression);
                 }
-            } else if (_state == GameState::RetreiveObjective) {
+            } else if (state == GameState::RetreiveObjective) {
                 _cursor.doAction();
 
                 if (_controller.isButtonJustDown()){
                     if (!_objectiveMap.getAt(_cursor.getPosition())) {
-                        _state = GameState::GameOver;
+                        _explanations.setGameState(GameState::GameOver);
                         _progressBar.setState(ProgressBarState::Fail);
                     } else {
                         _currentMap.setAt(_cursor.getPosition(), true);
                         _progressBar.setProgressWithAnim(_currentMap.getOnAmount());
 
                         if (_currentMap == _objectiveMap) {
-                            _state = GameState::Win;
+                            _explanations.setGameState(GameState::Win);
                             _progressBar.setState(ProgressBarState::Win);
                         }
                     }
                 }
-            } else if (_state == GameState::GameOver) {
+            } else if (state == GameState::GameOver) {
                 if (_controller.isButtonJustDown()) {
                     _currentMap.clear();
                     _progressBar.resetStateAndProgress(_objectiveMap.getOnAmount());
-                    _state = GameState::None;
+                    _explanations.setGameState(GameState::None);
                 }
-            } else if (_state == GameState::Win) {
+            } else if (state == GameState::Win) {
                 if (_controller.isButtonJustDown()) {
-                    _state = GameState::ShowObjective;
+                    _explanations.setGameState(GameState::ShowObjective);
                     _currentMap.clear();
                     ++_level;
                     setNewObjectiveMap();
@@ -450,7 +431,9 @@ struct Game {
         }
 
         void render(){
-            if (_state == GameState::RetreiveObjective) {
+            GameState state = _explanations.getGameState();
+
+            if (state == GameState::RetreiveObjective) {
                 for (char x = 0; x < MAP_SIZE; ++x) {
                     for (char y = 0; y < MAP_SIZE; ++y) {
                         if (!(x == _cursor.getPosition().x && y == _cursor.getPosition().y))
@@ -459,19 +442,19 @@ struct Game {
                 }
 
                 lc.setLed(0, _cursor.getPosition().y, _cursor.getPosition().x, _cursor.getLedIsOn());
-            } else if (_state == GameState::ShowObjective) {
+            } else if (state == GameState::ShowObjective) {
                 for (char x = 0; x < MAP_SIZE; ++x) {
                     for (char y = 0; y < MAP_SIZE; ++y) {
                         lc.setLed(0, y, x, _objectiveMap.getAt({x, y}));
                     }
                 }
-            } else if (_state == GameState::GameOver){
+            } else if (state == GameState::GameOver){
                 for (char x = 0; x < MAP_SIZE; ++x) {
                     for (char y = 0; y < MAP_SIZE; ++y) {
                         lc.setLed(0, y, x, true);
                     }
                 }
-            } else if (_state == GameState::Win){
+            } else if (state == GameState::Win){
                 for (char x = 0; x < MAP_SIZE; ++x) {
                     for (char y = 0; y < MAP_SIZE; ++y) {
                         lc.setLed(0, y, x, _currentMap.getAt({x, y}));
