@@ -99,7 +99,7 @@ struct ProgressBar {
         ProgressBarState state = ProgressBarState::None;
 
     public:
-        ProgressBar(uint16_t ledAmount, int16_t ledInputPin = 6, neoPixelType ledType = NEO_GRB + NEO_KHZ800) : strip(ledAmount, ledInputPin, ledType) {
+        ProgressBar(uint16_t ledAmount, int16_t ledInputPin = PROGRESSION_IN, neoPixelType ledType = NEO_GRB + NEO_KHZ800) : strip(ledAmount, ledInputPin, ledType) {
         }
 
         void resetStateAndProgress(uint16_t maxProgress) {
@@ -484,7 +484,6 @@ void setup() {
 }
 
 void loop() { 
-    
     game.doAction();
     game.render();
     //sprintf(textBuffer, "_cursor x: %d, y: %d", _objectiveMap.getAt(0,0), 10);
