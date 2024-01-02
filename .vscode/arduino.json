@@ -1,5 +1,6 @@
 {
     "port": "/dev/cu.usbmodem143101",
     "board": "arduino:avr:uno",
-    "sketch": "memory_game.ino"
+    "sketch": "memory_game.ino",
+    "output": "output"
 }

@@ -7,17 +7,18 @@
 
 #define MAP_SIZE 8
 
-const int LED_CONTROL_DIN_ID = 12;
-const int LED_CONTROL_CLK_ID = 11;
-const int LED_CONTROL_CS_ID = 10;
+const int SCREEN_IN_DIN = 12;
+const int SCREEN_IN_CS = 11;
+const int SCREEN_IN_CLK = 10;
 
-const unsigned int WIN_LED_ID = 4;
-const int BUTTON_ID = 2;
-const int JOY_BUTTON_ID = 8;
-const int JOY_X_ID = A0;
-const int JOY_Y_ID = A1;
+const int TUTO_IN = 6;
+const int PROGRESSION_IN = 5;
 
-LedControl lc = LedControl(LED_CONTROL_DIN_ID, LED_CONTROL_CLK_ID, LED_CONTROL_CS_ID, 1);
+const int BUTTON_IN = 7;
+const int X_OUT = A0;
+const int Y_OUT = A1;
+
+LedControl lc = LedControl(SCREEN_IN_DIN, SCREEN_IN_CLK, SCREEN_IN_CS, 1);
 
 float lerp(float from, float to, float ratio){
     return (to - from) * ratio + from;
@@ -98,7 +99,7 @@ struct ProgressBar {
         ProgressBarState state = ProgressBarState::None;
 
     public:
-        ProgressBar(uint16_t ledAmount, int16_t ledInputPin = 6, neoPixelType ledType = NEO_GRB + NEO_KHZ800) : strip(ledAmount, ledInputPin, ledType) {
+        ProgressBar(uint16_t ledAmount, int16_t ledInputPin = PROGRESSION_IN, neoPixelType ledType = NEO_GRB + NEO_KHZ800) : strip(ledAmount, ledInputPin, ledType) {
         }
 
         void resetStateAndProgress(uint16_t maxProgress) {
@@ -286,38 +287,6 @@ struct Map {
         inline bool operator!=(const Map& rhs) { return !(*this == rhs); }
 };
 
-struct Light {
-    private:
-        bool _isOn;
-
-    public:
-        unsigned int id;
-        unsigned long millisForSwitch;
-
-        Light(unsigned int id) : id(id) {}
-
-        bool isOn(){
-            return this->_isOn;
-        }
-
-        void switchTo(bool isOn){
-            this->_isOn = isOn;
-            digitalWrite(id, isOn ? HIGH : LOW);
-        }
-
-        void switchToFor(bool isOn, unsigned long duration){
-            this->switchTo(isOn);
-            this->millisForSwitch = millis() + duration;
-        }
-
-        void doAction() {
-            if (this->millisForSwitch > 0 && millis() > this->millisForSwitch){
-                this->millisForSwitch = 0;
-                this->switchTo(!this->_isOn);
-            }
-        }    
-};
-
 struct Controller {
     private: 
         char readAxis(byte thisAxis) {
@@ -325,27 +294,26 @@ struct Controller {
             int reading = analogRead(thisAxis);
 
             // map the reading from the analog input range to the output range:
-            reading = map(reading, 0, 1023, 0, 3);
-            return reading - 1;
+            return map(reading, 0, 1023, 0, MAP_SIZE - 1);
         }
 
         bool previousButtonDownState = false;
 
     public:
-        Vector2 getAxis(){
-            return {readAxis(JOY_X_ID), readAxis(JOY_Y_ID)};
+        Vector2 getPosition(){
+            return {readAxis(X_OUT), readAxis(Y_OUT)};
         }
 
         bool isButtonDown(){
-            return digitalRead(BUTTON_ID);
+            return digitalRead(BUTTON_IN);
         }
 
         bool isButtonJustDown(){
-            return !previousButtonDownState && digitalRead(BUTTON_ID);
+            return !previousButtonDownState && digitalRead(BUTTON_IN);
         } 
 
         void doAction(){
-            previousButtonDownState = digitalRead(BUTTON_ID);
+            previousButtonDownState = digitalRead(BUTTON_IN);
         }
 };
 
@@ -362,7 +330,9 @@ struct Cursor {
         Vector2 _previousAxis;
 
     public:
-        Vector2 position;
+        Vector2 getPosition(){
+            return this->_controller.getPosition();
+        }
 
         Cursor(Map& _map, Controller& _controller) : _map(_map), _controller(_controller) {
             
@@ -375,34 +345,13 @@ struct Cursor {
         void doAction(){
             unsigned long currentMillis = millis();
 
-            Vector2 currentAxis = _controller.getAxis();
+            Vector2 currentAxis = _controller.getPosition();
 
             if (currentMillis > _lastMillis + LED_BLINK_FREQUENCY) {
                 _lastMillis = currentMillis;
                 _ledIsOn = !_ledIsOn;
             }
-
-            if (currentAxis != _previousAxis) {
-                _previousAxis = currentAxis;
-                move(currentAxis, currentMillis);
-            } else if (currentMillis > _previousMoveMillis + MOVE_FREQUENCY && !currentAxis.isZero()){
-                move(currentAxis, currentMillis);
-            }
         }
-
-  private:
-    void move(const Vector2& velocity, unsigned long currentMillis) {
-      this->position.x = (this->position.x + velocity.x) % MAP_SIZE;
-      this->position.y = (this->position.y + velocity.y) % MAP_SIZE;
-
-      if (this->position.x < 0)
-        this->position.x += MAP_SIZE;
-
-      if (this->position.y < 0)
-        this->position.y += MAP_SIZE;
-
-      this->_previousMoveMillis = currentMillis;
-    }
 };
 
 
@@ -418,12 +367,11 @@ struct Game {
         Map _objectiveMap;
         Map _currentMap;
         Cursor _cursor;
-        Light _winLight;
         ProgressBar _progressBar;
         uint16_t _level = 1;
 
     public:
-        Game() : _cursor(_currentMap, _controller), _winLight(WIN_LED_ID), _progressBar(10) {
+        Game() : _cursor(_currentMap, _controller), _progressBar(PROGRESSION_IN) {
             
         }
 
@@ -456,13 +404,12 @@ struct Game {
                 _cursor.doAction();
 
                 if (_controller.isButtonJustDown()){
-                    if (!_objectiveMap.getAt(_cursor.position)) {
+                    if (!_objectiveMap.getAt(_cursor.getPosition())) {
                         _state = GameState::GameOver;
                         _progressBar.setState(ProgressBarState::Fail);
                     } else {
-                        _currentMap.setAt(_cursor.position, true);
+                        _currentMap.setAt(_cursor.getPosition(), true);
                         _progressBar.setProgressWithAnim(_currentMap.getOnAmount());
-                        _winLight.switchToFor(true, 1000);
 
                         if (_currentMap == _objectiveMap) {
                             _state = GameState::Win;
@@ -474,7 +421,6 @@ struct Game {
                 if (_controller.isButtonJustDown()) {
                     _currentMap.clear();
                     _progressBar.resetStateAndProgress(_objectiveMap.getOnAmount());
-                    _cursor.position = {0,0};
                     _state = GameState::None;
                 }
             } else if (_state == GameState::Win) {
@@ -488,7 +434,6 @@ struct Game {
             }
 
             _controller.doAction();
-            _winLight.doAction();
             _progressBar.doAction();
         }
 
@@ -496,12 +441,12 @@ struct Game {
             if (_state == GameState::RetreiveObjective) {
                 for (char x = 0; x < MAP_SIZE; ++x) {
                     for (char y = 0; y < MAP_SIZE; ++y) {
-                        if (!(x == _cursor.position.x && y == _cursor.position.y))
+                        if (!(x == _cursor.getPosition().x && y == _cursor.getPosition().y))
                             lc.setLed(0, y, x, _currentMap.getAt({x, y}));
                     }
                 }
 
-                lc.setLed(0, _cursor.position.y, _cursor.position.x, _cursor.getLedIsOn());
+                lc.setLed(0, _cursor.getPosition().y, _cursor.getPosition().x, _cursor.getLedIsOn());
             } else if (_state == GameState::ShowObjective) {
                 for (char x = 0; x < MAP_SIZE; ++x) {
                     for (char y = 0; y < MAP_SIZE; ++y) {
@@ -529,9 +474,7 @@ struct Game {
 Game game;
 
 void setup() {
-    pinMode(WIN_LED_ID, OUTPUT);
-    pinMode(JOY_BUTTON_ID, INPUT);
-    pinMode(BUTTON_ID, INPUT);
+    pinMode(BUTTON_IN, INPUT);
     lc.shutdown(0,false);
     /* Set the brightness to a medium values */
     lc.setIntensity(0,0);
@@ -541,7 +484,6 @@ void setup() {
 }
 
 void loop() { 
-    
     game.doAction();
     game.render();
     //sprintf(textBuffer, "_cursor x: %d, y: %d", _objectiveMap.getAt(0,0), 10);
