@@ -1,3 +1,6 @@
+#ifndef COLOR
+#define COLOR
+
 #include "Mathf.h"
 
 struct Color {
@@ -55,3 +58,5 @@ struct Color {
         inline bool operator==(const Color& rhs) const { return r == rhs.r && g == rhs.g && b == rhs.b; }
         inline bool operator!=(const Color& rhs) const { return r != rhs.r || g != rhs.g || b != rhs.b; }
 };
+
+#endif

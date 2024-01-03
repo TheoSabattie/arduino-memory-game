@@ -1,3 +1,6 @@
+#ifndef MATHF
+#define MATHF
+
 class Mathf {
     public :
         inline static float lerp(float from, float to, float ratio){
@@ -12,3 +15,5 @@ class Mathf {
             return lerp(toRangeStart, toRangeEnd, inverseLerp(value, fromRangeStart, fromRangeEnd));
         }
 };
+
+#endif
