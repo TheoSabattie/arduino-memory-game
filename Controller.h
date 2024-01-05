@@ -10,8 +10,8 @@ struct Controller {
             // read the analog input:
             int reading = analogRead(thisAxis);
 
-            // map the reading from the analog input range to the output range:
-            return map(reading, 0, 1023, 0, MAP_SIZE - 1);
+            // map the reading from the anazlog input range to the output range:
+            return Mathf::remap(reading, -68, 960, 0, MAP_SIZE - 1); // note: offset to fix wrong value (I don't know why it's inacurate)
         }
 
         bool previousButtonDownState = false;

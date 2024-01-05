@@ -88,6 +88,8 @@ struct Game {
         ExplanationsManager _explanations;
         uint16_t _level = 1;
         LedControl lc;
+
+        uint16_t maxLevel = MAP_SIZE*MAP_SIZE;
     public:
         Game() : _cursor(_currentMap, _controller), _progressBar(10, PROGRESSION_IN), lc(SCREEN_IN_DIN, SCREEN_IN_CLK, SCREEN_IN_CS, 1) {
             
@@ -119,12 +121,17 @@ struct Game {
 
             if (state == GameState::None){ {
                 _explanations.setGameState(GameState::ShowObjective);
-                _progressBar.resetStateAndProgress(_objectiveMap.getOnAmount());
+                _progressBar.resetStateAndProgress(maxLevel);
+                _progressBar.setState(ProgressBarState::AnimatedProgression);
+                _progressBar.setProgressWithAnim(_level);
+                _explanations.setProgressionMode(ProgressionMode::Game);
             }
             } else if (state == GameState::ShowObjective) {
                 if (_controller.isButtonJustDown()) {
                     _explanations.setGameState(GameState::RetreiveObjective);
+                    _progressBar.resetStateAndProgress(_objectiveMap.getOnAmount());
                     _progressBar.setState(ProgressBarState::AnimatedProgression);
+                    _explanations.setProgressionMode(ProgressionMode::Level);
                 }
             } else if (state == GameState::RetreiveObjective) {
                 _cursor.doAction();
@@ -151,11 +158,10 @@ struct Game {
                 }
             } else if (state == GameState::Win) {
                 if (_controller.isButtonJustDown()) {
-                    _explanations.setGameState(GameState::ShowObjective);
+                    _explanations.setGameState(GameState::None);
                     _currentMap.clear();
                     ++_level;
                     setNewObjectiveMap();
-                    _progressBar.resetStateAndProgress(_objectiveMap.getOnAmount());
                 }
             }
 
@@ -210,8 +216,8 @@ void setup() {
 void loop() { 
     game.doAction();
     game.render();
-    //sprintf(textBuffer, "_cursor x: %d, y: %d", _objectiveMap.getAt(0,0), 10);
-    //Serial.println(textBuffer);
-    //delay(1000);
+
+    sprintf(textBuffer, "xOut: %d, yOut: %d", analogRead(X_OUT), analogRead(Y_OUT));
+    Serial.println(textBuffer);
 }
 
